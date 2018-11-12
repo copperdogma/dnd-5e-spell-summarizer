@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html dir="ltr" lang="en-US">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>D&D Spell Summarizer - Spell Set</title>
+</head>
+
+<style>
+    body { background: #FDF1DC; }
+    .error { color: red; }
+    #spells { display: flex; flex-flow: row wrap; }
+    #spell {
+        border-bottom: 3px solid #922610;
+        flex: 1;
+        padding: 0.6em;
+        padding-bottom: 0.5em;
+        position: relative;
+        margin-left: 2px;
+        margin-right: 2px;
+        min-width: 15em;
+        max-width: 30em; }
+    h2 { font-family: 'Libre Baskerville', 'Lora', 'Calisto MT', 'Bookman Old Style', Bookman, 'Goudy Old Style', Garamond, 'Hoefler Text', 'Bitstream Charter', Georgia, serif;
+        color: #7A200D;
+        font-weight: 700;
+        margin: 0;
+        font-size: 23px;
+        letter-spacing: 1px;
+        font-variant: small-caps; }
+    dl { margin: .5em 0 }
+    p { margin: .5em 0 }
+    dt { clear: left; float:left; padding-right: 5px; font-weight: bolder; }
+    dt, dd { min-height: 1.1em; }
+    dd strong { color: #7A200D; }
+</style>
+
+<body class="home">
+    <p id="error" class="error" style="display:none">ERROR: You must call this page with a ?spells= querystring
+        parameter with a comma-separated list of spells to render.</p>
+    <section id="spells"></section>
+    <template id="spell-template">
+        <div id="spell" class="card">
+            <h2 class="title"></h2>
+            <em class="type-and-level"></em>
+            <dl>
+                <dt>Casting Time:</dt>
+                <dd class="casting-time"></dd>
+                <dt>Range:</dt>
+                <dd class="range"></dd>
+                <dt>Components:</dt>
+                <dd class="components"></dd>
+                <dt>Duration:</dt>
+                <dd class="duration"></dd>
+            </dl>
+            <p class="description"></p>
+        </div>
+    </template>
+    <footer>
+        <p>Created by: Cam Marsollier - <a href="mailto:cam.marsollier@gmail.com">cam.marsollier@gmail.com</a></p>
+        <p>Note that this site has no affiliation with <a href="http://www.wizards.com/Magic/">Wizards of the Coast</a>,
+            owner of Dungeons and Dragons.</p>
+        <p>Note that this site has no affiliation with <a href="https://donjon.bin.sh">donjon</a>, nor was permission
+            requested (yet) to use their data.</p>
+    </footer>
+    <!-- Spell data source -->
+    <script type="text/javascript" src="https://donjon.bin.sh/5e/spells/spell_data.js"></script>
+    <!-- Example json from https://donjon.bin.sh/5e/spells/rpc.cgi?name=Acid+Splash
+        {  
+        "Casting Time":"1 action",
+        "Ritual":"no",
+        "_keys":[  
+            "Casting Time",
+            "Class",
+            "Components",
+            "Concentration",
+            "Description",
+            "Duration",
+            "Level",
+            "Name",
+            "Range",
+            "Ritual",
+            "School",
+            "Source"
+        ],
+        "Name":"Acid Splash",
+        "Duration":"Instantaneous",
+        "Description":"You hurl a bubble of acid. Choose one creature within range, or choose\ntwo creatures within range that are within 5 feet of each other. A\ntarget must succeed on a Dexterity saving throw or take 1d6 acid damage.\n\nThis spell's damage increases by 1d6 when you reach 5th level (2d6),\n11th level (3d6), and 17th level (4d6).",
+        "Class":[  
+            "Sorcerer",
+            "Wizard"
+        ],
+        "Range":"60 feet",
+        "School":"Conjuration",
+        "Level":"Cantrip",
+        "Concentration":"no",
+        "Components":"VS",
+        "Source":"phb 211",
+        "card":"<div><h2>Acid Splash</h2>\n<p class=\"type\">Conjuration Cantrip &nbsp; (Sorcerer, Wizard)</p>\n<p class=\"stat\"><b>Casting Time:</b> 1 action</p>\n<p class=\"stat\"><b>Range:</b> 60 feet</p>\n<p class=\"stat\"><b>Components:</b> VS</p>\n<p class=\"stat\"><b>Duration:</b> Instantaneous</p>\n<div class=\"description\"><p>You hurl a bubble of acid. Choose one creature within range, or choose two creatures within range that are within 5 feet of each other. A target must succeed on a Dexterity saving throw or take 1d6 acid damage.</p><p>This spell's damage increases by 1d6 when you reach 5th level (2d6), 11th level (3d6), and 17th level (4d6).</p></div>\n<p class=\"source\">phb 211</p></div>"
+        }
+    -->
+    <script>
+        'use strict';
+        // Spell details + desc: https://donjon.bin.sh/5e/spells/rpc.cgi?name=Acid+Splash
+        // spell-set.html?spells=Mage%20Hand,Minor%20Illusion,Poison%20Spray,Ray%20of%20Frost,Mage%20Armor,Magic%20Missile,Shield,Alter%20Self,Misty%20Step,Web,Fly,Lightning%20Bolt,Evards%20Black%20Tentacles
+        // http://localhost:8000/Documents/Projects/D%26D%20Spell%20Summarizer/spell-set.html?spells=Mage%20Hand,Minor%20Illusion,Poison%20Spray,Ray%20of%20Frost,Mage%20Armor,Magic%20Missile,Shield,Alter%20Self,Misty%20Step,Web,Fly,Lightning%20Bolt,Evard
+        async function start() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (!urlParams.has('spells')) { document.getElementById('error').style.display = 'block'; }
+
+            const inputSpells = urlParams.get('spells');
+            const spellItems = inputSpells.split(',');
+
+            const spellContainer = document.querySelector('#spells');
+            const spellTemplate = document.querySelector('#spell-template');
+            spellItems.forEach(async spellName => {
+                const spellSiteUri = encodeURIComponent(`https://donjon.bin.sh/5e/spells/rpc.cgi?name=${spellName.replace(/ /g, '+')}`);
+                const spellUrl = `ba-simple-proxy.php?url=${spellSiteUri}`;
+                const spellDataResponse = await fetch(spellUrl);
+                const spellData = (await spellDataResponse.json()).contents;
+
+                const newSpellElem = document.importNode(spellTemplate.content, true);
+                newSpellElem.querySelector('.title').innerHTML = spellData.Name;
+                newSpellElem.querySelector('.casting-time').innerHTML = spellData['Casting Time'];
+                const typeAndLevel = (spellData['Level'] == 'Cantrip') ? `${spellData['School']} cantrip` : `${spellData['Level']}-level ${spellData['School']}`;
+                newSpellElem.querySelector('.type-and-level').innerHTML = `${typeAndLevel}, ${spellData['Source']}`;
+                newSpellElem.querySelector('.range').innerHTML = spellData['Range'];
+                newSpellElem.querySelector('.components').innerHTML = spellData['Components'];
+                const duration = (spellData['Duration'] || '').replace(/(concentration)/gi,'<strong>$1</strong>')
+                newSpellElem.querySelector('.duration').innerHTML = duration;
+                const description = (spellData['Description'] || '').replace(/\*\*(.*?)\*\*/g,'</p><p><strong>$1</strong>');
+                newSpellElem.querySelector('.description').innerHTML = description;
+
+                spellContainer.appendChild(newSpellElem);
+            });
+        }
+
+        start();
+    </script>
+</body>
+
+</html>

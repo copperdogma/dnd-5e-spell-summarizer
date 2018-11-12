@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html dir="ltr" lang="en-US">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>TEST1 D&D Spell Summarizer</title>
+</head>
+
+<style>
+    .concentration {
+        color: red;
+        font-weight: bold;
+    }
+
+    #spell {
+        background: #FDF1DC;
+        border: 3px solid #922610;
+        padding: 0.6em;
+        padding-bottom: 0.5em;
+        position: absolute;
+        margin-left: 2px;
+        margin-right: 2px;
+        width: 30em; }
+    #spell h2 { font-family: 'Libre Baskerville', 'Lora', 'Calisto MT', 'Bookman Old Style', Bookman, 'Goudy Old Style', Garamond, 'Hoefler Text', 'Bitstream Charter', Georgia, serif;
+        color: #7A200D;
+        font-weight: 700;
+        margin: 0;
+        font-size: 23px;
+        letter-spacing: 1px;
+        font-variant: small-caps; }
+    #spell dl { margin: .5em 0 }
+    #spell p { margin: .5em 0 }
+    #spell dt { clear: left; float:left; padding-right: 5px; font-weight: bolder; }
+    #spell dt, #spell dd { min-height: 1.1em; }
+    #spell dd strong { color: #7A200D; }
+</style>
+
+<body class="home">
+    <h1>D&D Spell Summarizer</h1>
+    <p>This page imports spell data from the <a href="https://donjon.bin.sh/5e/spells/" target="_blank">donjon 5e Spell
+            Sheet</a>
+        to assist dungeon masters in preparing for adventures. It will parse a pasted list of spells and re-output them
+        in a compact
+        list, linking them back to the donjon site for quick lookup
+    </p>
+    <ul>
+        <li>12-Nov-2018: TESTING.</li>
+        <li>2-Nov-2018: Created.</li>
+    </ul>
+    <br />
+    <div id="status"><em>Loading ...</em></div>
+    <br />
+    <h2 id='local-error' class='error' style="display:none">NOTE: You CANNOT run this thing locally. It won't work. It
+        needs to run through the proxy to work.</h2>
+    <section id="options">
+        <label for="spell-list"><strong>Spell list</strong> - paste a newline- or comma-separated spell list here:</label>
+        <br />
+        <!-- Hardcoded example data: -->
+        <!-- <textarea id="spell-list" cols="100" rows="20">
+            Cantrips (at will): mage hand, minor illusion, poison spray, ray of frost
+            lst level (4 slots): mage armor, magic missile, shield, witch bolt 2nd level (3 slots): alter self, misty step, web
+            3rd level (3 slots):fly, lightning bolt
+            4th level (3 slots): Evard's black tentacles, greater invisibility 5th level (2 slots): c/oudki/1
+        </textarea> -->
+        <textarea id="spell-list" cols="100" rows="20"></textarea>
+        <br />
+        <br />
+        <input id="generate" type="submit" value="Generate Formatted Spell List" style="font-size:150%" disabled />
+    </section>
+    <h2>Output</h2>
+    <h3>Parsing Log</h3>
+    <section id="log"></section>
+    <h3>Formatted Spell List</h3>
+    <div id="out-html"></div>
+    <textarea id="out-textarea" cols="100" rows="20"></textarea>
+    <template id="spell-template">
+        <div id="spell" class="card">
+            <h2 class="title"></h2>
+            <em class="type-and-level"></em>
+            <dl>
+                <dt>Casting Time:</dt>
+                <dd class="casting-time"></dd>
+                <dt>Range:</dt>
+                <dd class="range"></dd>
+                <dt>Components:</dt>
+                <dd class="components"></dd>
+                <dt>Duration:</dt>
+                <dd class="duration"></dd>
+            </dl>
+            <p class="description"></p>
+        </div>
+    </template>
+    <footer>
+        <p>Created by: Cam Marsollier - <a href="mailto:cam.marsollier@gmail.com">cam.marsollier@gmail.com</a></p>
+        <p>Note that this site has no affiliation with <a href="http://www.wizards.com/Magic/">Wizards of the Coast</a>,
+            owner of Dungeons and Dragons.</p>
+        <p>Note that this site has no affiliation with <a href="https://donjon.bin.sh">donjon</a>, nor was permission
+            requested (yet) to use their data.</p>
+    </footer>
+    <!-- Spell data source -->
+    <!-- <script src="/js/spell-summarizer.js"></script> -->
+    <script type="text/javascript" src="https://donjon.bin.sh/5e/spells/spell_data.js"></script>
+    <script>
+        'use strict';
+        /* e.g.: data coming from donjon's spell_data.js
+            "Maximilian's Earthen Grasp":{  
+                "level":"2nd",
+                "duration":"1 minute",
+                "school":"Transmutation",
+                "components":"VSM",
+                "range":"30 feet",
+                "page":"ee 20, xge 161",
+                "concentration":"yes",
+                "ritual":"no",
+                "class":{  
+                    "Sorcerer":"yes",
+                    "Wizard":"yes"
+                },
+                "name":"Maximilian's Earthen Grasp",
+                "casting_time":"1 action"
+            }
+        */
+
+        // Spell details + desc: https://donjon.bin.sh/5e/spells/rpc.cgi?name=Acid+Splash
+
+        /* Sample spell list
+            Cantrips (at will): mage hand, minor illusion, poison spray, ray of frost
+            lst level (4 slots): mage armor, magic missile, shield, witch bolt 
+            2nd level (3 slots): alter self, misty step, web
+            3rd level (3 slots):fly, lightning bolt
+            4th level (3 slots): Evard's black tentacles, greater invisibility 
+            5th level (2 slots): c/oudki/1
+        */
+
+        let spellData = undefined;
+        async function loadData() {
+            if (spell_data === undefined) { throw Error('Could not load spell_data.js donjon. Cannot continue.'); }
+            spellData = Object.keys(spell_data).reduce((result, key) => { result[key.toLowerCase()] = spell_data[key]; return result; }, {});
+            document.getElementById('status').innerHTML = '<em>Loaded Successfully</em>';
+            document.getElementById('generate').removeAttribute('disabled');
+            document.getElementById('generate').addEventListener('click', e => start());
+        }
+
+        async function start() {
+            const inputSpells = document.getElementById('spell-list').value;
+            const spellItems = inputSpells.replace(/(\n|:)/g, ',').split(',');
+
+            const matchedSpells = new Array();
+            const unmatchedSpells = new Array();
+            spellItems.map(spellItem => {
+                const spellItemKey = spellItem.trim().toLowerCase();
+                const foundSpell = spellData[spellItemKey];
+                if (foundSpell === undefined) {
+                    unmatchedSpells.push(spellItem.trim());
+                }
+                else {
+                    matchedSpells.push(foundSpell);
+                }
+            });
+
+            // Fix data to make it easier to process/output.
+            matchedSpells.map(spell => {
+                spell.levelNum = spell.level[0] == 'C' ? 0 : parseInt(spell.level[0]); // Parse level
+            });
+
+            // Group spells by level
+            let spellsByLevel = [];
+            let htmlOutput = '';
+            [...Array(9).keys()].map(levelNum => {
+                const spellsFromThisLevel = matchedSpells.reduce((spells, spell) => {
+                    if (spell.levelNum === levelNum) { spells.push(spell); } return spells;
+                }
+                    , []);
+                spellsByLevel.push(spellsFromThisLevel);
+                if (spellsFromThisLevel.length > 0) {
+                    htmlOutput += `${spellsFromThisLevel[0].level}: `;
+                    htmlOutput += spellsFromThisLevel.map(spell => printSpell(spell)).join(', ');
+                    htmlOutput += '<br/>\n';
+                }
+            });
+
+            const htmlSummaryLink = printSummaryLink(spellsByLevel);
+            htmlOutput = htmlSummaryLink + '<br/>' + htmlOutput;
+
+            document.getElementById('out-html').innerHTML = htmlOutput;
+            document.getElementById('out-textarea').value = htmlOutput;
+
+            document.querySelectorAll('#out-html a.spell').forEach(el => { 
+                el.addEventListener('mouseover', showSpell);
+                el.addEventListener('mousemove', moveSpell);
+                el.addEventListener('mouseout', removeSpell);
+            });
+        }
+
+        function printSpell(spell) {
+            const spellParts = new Array();
+            const concentration = (spell.concentration == 'yes') ? " <span class='concentration'>(C)</span> " : '';
+            spellParts.push(`<a target='_blank' class='spell' href='#'>${spell.name}</a>${concentration}:`);
+            if (spell.casting_time != '1 action') { spellParts.push(spell.casting_time.replace(/(1 | action)/gi, '').replace(/reaction/gi, 'react.')); }
+            if (spell.range != undefined) { spellParts.push(spell.range.replace(/ feet/gi, "'")); }
+            const finalSpellName = spellParts.join(' ');
+            return finalSpellName;
+        }
+
+        function printSummaryLink(spellsByLevel) {
+            var allSpells = [].concat(...spellsByLevel); // Flattens array of arrays into a single array.
+            var allSpellNames = allSpells.map(spell => encodeURIComponent(spell.name));
+            return `<a target='_blank' href="spell-set.html?spells=${allSpellNames.join(',')}">All Spell Descriptions</a>`;
+        }
+
+        const cachedSpellData = {};
+        async function showSpell(el) {
+            const spellName = el.currentTarget.innerText;
+
+            const spellTemplate = document.querySelector('#spell-template');
+
+            let spellData = cachedSpellData[spellName];
+            if (spellData === undefined) {
+                const spellSiteUri = encodeURIComponent(`https://donjon.bin.sh/5e/spells/rpc.cgi?name=${spellName.replace(/ /g, '+')}`);
+                const spellUrl = `ba-simple-proxy.php?url=${spellSiteUri}`;
+                const spellDataResponse = await fetch(spellUrl);
+                spellData = (await spellDataResponse.json()).contents;
+                cachedSpellData[spellName] = spellData;
+            }
+
+            const newSpellElem = document.importNode(spellTemplate.content, true);
+            newSpellElem.querySelector('.title').innerHTML = spellData.Name;
+            newSpellElem.querySelector('.casting-time').innerHTML = spellData['Casting Time'];
+            const typeAndLevel = (spellData['Level'] == 'Cantrip') ? `${spellData['School']} cantrip` : `${spellData['Level']}-level ${spellData['School']}`;
+            newSpellElem.querySelector('.type-and-level').innerHTML = `${typeAndLevel}, ${spellData['Source']}`;
+            newSpellElem.querySelector('.range').innerHTML = spellData['Range'];
+            newSpellElem.querySelector('.components').innerHTML = spellData['Components'];
+            const duration = (spellData['Duration'] || '').replace(/(concentration)/gi,'<strong>$1</strong>')
+            newSpellElem.querySelector('.duration').innerHTML = duration;
+            const description = (spellData['Description'] || '').replace(/\*\*(.*?)\*\*/g,'</p><p><strong>$1</strong>');
+            newSpellElem.querySelector('.description').innerHTML = description;
+
+            document.getElementById('out-html').appendChild(newSpellElem);
+            const insertedSpellElem = document.getElementById('spell');
+            insertedSpellElem.style.top = `${el.pageY}px`;
+            insertedSpellElem.style.left = `${el.pageX}px`;
+        }
+
+        async function moveSpell(el) {
+            const elem = document.getElementById('spell');
+            if (elem === null) return;
+            console.log(el.pageX);
+            elem.style.top = `${el.pageY}px`;
+            elem.style.left = `${el.pageX}px`;
+        }
+
+        async function removeSpell(el) {
+            const elems = document.querySelectorAll('#spell');
+            if (elems === null) return;
+            elems.forEach(el => el.parentNode.removeChild(el));
+        }
+
+        loadData();
+    </script>
+</body>
+
+</html>
